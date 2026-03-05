@@ -1,0 +1,10 @@
+{
+    "work_dir": "",
+    "yt_cookie_path": "",
+    "yt_save_dir": "",
+    "whisper_model": "",
+    "whisper_threads": 4,
+    "whisper_workers": 1,
+    "whisper_vad": true,
+    "whisper_compute_type": "float16"
+}
