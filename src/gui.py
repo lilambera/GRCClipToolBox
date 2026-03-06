@@ -6,6 +6,7 @@ import tempfile
 from datetime import datetime
 from tkinter import ttk, filedialog, messagebox
 import webbrowser
+import sys
 
 from addSubtitle import burn_subtitles
 from AssToTxt import extract_ass_text
@@ -15,7 +16,11 @@ from YTdownload import get_channel_videos, download_video
 from CookiesGain import get_youtube_cookies
 from whisperLocal import whisper_trans
 
-CONFIG_FILE = "config.json"
+def _get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(_get_base_dir(), "config.json")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -635,7 +640,7 @@ def ytDownload_gui(parent):
 
             def task():
                 append_log(f"▶ 开始抓取频道: {url}")
-                videos = get_channel_videos(url, start_date, end_date, log=append_log)
+                videos = get_channel_videos(url, start_date, end_date, cookie_path=cookie_path,log=append_log)
 
                 if not videos:
                     append_log("未找到符合条件的视频。")
