@@ -947,6 +947,12 @@ def whisper_gui(parent):
 def gui():
     root = tk.Tk()
     root.title("自用工具整合")
+    if getattr(sys, 'frozen', False):
+        icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+    else:
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+    if os.path.exists(icon_path):
+        root.iconbitmap(icon_path)
     notebook = ttk.Notebook(root)
     notebook.pack(fill="both", expand=True)
     tab1 = ttk.Frame(notebook)
