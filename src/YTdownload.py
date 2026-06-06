@@ -12,6 +12,15 @@ from datetime import datetime
 DELAY_MIN = 1.0
 DELAY_MAX = 3.0
 
+def _hms_to_sec(t):
+    parts = t.strip().split(":")
+    parts = [float(p) for p in parts]
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    if len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    return parts[0]
+
 def _get_base_dir():
     if getattr(sys, 'frozen', False):
         return sys._MEIPASS  # _internal 目录
@@ -181,29 +190,38 @@ def download_video(video_url, output_dir,
     log(f"[调试] 临时文件  = {temp_path}")
     log(f"[调试] 输出文件  = {final_path}")
 
-    #时间区间组
-    input_args = []
-    output_args = ["-loglevel", "error", "-nostats"]
+    is_nico = "nicovideo.jp" in video_url or "nico.ms" in video_url
 
-    if time_start:
-        input_args += ["-ss", time_start]
-    if time_end:
-        input_args += ["-to", time_end]
+    if is_nico:
+        fmt = "bestvideo+bestaudio/best"
+    else:
+        fmt = "bestvideo[ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a][protocol!*=m3u8]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
     ydl_opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": fmt,
         "outtmpl": temp_path,
         "quiet": False,
         "no_warnings": False,
         "js_runtimes": {"deno": {"path": _DENO_PATH}},
         "remote_components": ["ejs:github"],
-        "external_downloader": "ffmpeg",
-        "external_downloader_args": {
-            "ffmpeg_i": input_args,
-            "ffmpeg": output_args,
-        },
         "logger": _YtdlpLogger(log),
+        "ffmpeg_location": os.path.dirname(_FFMPEG_PATH),
     }
+
+    # 时间区间裁剪：使用 yt-dlp 原生的 download_ranges，保持最高画质
+    if time_start or time_end:
+        from yt_dlp.utils import download_range_func
+        start_sec = _hms_to_sec(time_start) if time_start else 0
+        end_sec   = _hms_to_sec(time_end) if time_end else float('inf')
+        ydl_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
+        ydl_opts["force_keyframes_at_cuts"] = True
+        # ffmpeg 下载分段时需要代理和 UA 才能连接 Google 视频服务器
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or "http://127.0.0.1:1829"
+        ydl_opts["external_downloader_args"] = {
+            "ffmpeg_i": ["-user_agent", ua, "-http_proxy", proxy],
+        }
+        log(f"  时间区间: {time_start or '开头'} → {time_end or '结尾'}")
 
     if progress_hook:
         ydl_opts["progress_hooks"] = [progress_hook]
@@ -215,16 +233,41 @@ def download_video(video_url, output_dir,
         log(f"▶ 开始下载: {title}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        log("  下载完成，正在封装…")
+        log("  下载完成，正在检测编码…")
 
-        result = subprocess.run(
-            [_FFMPEG_PATH, "-y", "-i", temp_path,
-             "-c", "copy", "-movflags", "+faststart", final_path],
-            capture_output=True, text=True,encoding="utf-8",
+        # 检测视频编码
+        ffprobe_path = _FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe")
+        probe = subprocess.run(
+            [ffprobe_path, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "default=noprint_wrappers=1:nokey=1", temp_path],
+            capture_output=True, text=True, encoding="utf-8",
             creationflags=subprocess.CREATE_NO_WINDOW
         )
+        codec = probe.stdout.strip().lower()
+        log(f"  视频编码: {codec}")
+
+        if codec not in ("h264", "avc", "avc1"):
+            log(f"  编码为 {codec}，正在转换为H.264 …")
+            result = subprocess.run(
+                [_FFMPEG_PATH, "-y", "-i", temp_path,
+                 "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                 "-c:a", "aac", "-b:a", "192k",
+                 "-movflags", "+faststart", final_path],
+                capture_output=True, text=True, encoding="utf-8",
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            log("  编码为 H.264，开始封装…")
+            result = subprocess.run(
+                [_FFMPEG_PATH, "-y", "-i", temp_path,
+                 "-c", "copy", "-movflags", "+faststart", final_path],
+                capture_output=True, text=True, encoding="utf-8",
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+
         if result.returncode != 0:
-            log(f"❌ ffmpeg封装失败，返回码: {result.returncode}")
+            log(f"❌ ffmpeg处理失败，返回码: {result.returncode}")
             log(f"   stderr: {result.stderr}")
             return False, ""
 
