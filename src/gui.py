@@ -570,13 +570,36 @@ def ytDownload_gui(parent):
         log_text.configure(state="disabled")
 
     def make_progress_hook():
+        import re
+        _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+        last_log_pct = [0]  # 用列表避免 nonlocal
+
+        def _clean(s):
+            """去除 ANSI 转义码"""
+            if not isinstance(s, str):
+                return str(s)
+            return _ANSI_RE.sub('', s)
+
         def hook(d):
             if d["status"] == "downloading":
-                pct   = d.get("_percent_str", "N/A")
-                speed = d.get("_speed_str",   "N/A")
-                eta   = d.get("_eta_str",     "N/A")
+                pct   = _clean(d.get("_percent_str", "N/A"))
+                speed = _clean(d.get("_speed_str",   "N/A"))
+                eta   = _clean(d.get("_eta_str",     "N/A"))
                 parent.after(0, var_progress.set,
                              f"下载中: {pct}  速度: {speed}  预计剩余: {eta}")
+                # 每隔 10% 在日志中输出一次进度
+                try:
+                    cur_pct = float(pct.strip().replace("%", ""))
+                    if cur_pct - last_log_pct[0] >= 10:
+                        last_log_pct[0] = cur_pct
+                        append_log(f"  进度: {pct}  速度: {speed}  剩余: {eta}")
+                except (ValueError, TypeError):
+                    pass
+            elif d["status"] == "finished":
+                last_log_pct[0] = 0
+                parent.after(0, var_progress.set, "")
+                size = _clean(str(d.get('_total_bytes_str', d.get('total_bytes', 'N/A'))))
+                append_log(f"  文件下载完成，大小: {size}")
         return hook
 
     #开始按钮

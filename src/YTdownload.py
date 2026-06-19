@@ -1,5 +1,6 @@
 import yt_dlp
 import os
+import re
 import time
 import random
 import tempfile
@@ -7,10 +8,49 @@ import shutil
 import subprocess
 import sys
 import traceback
+import winreg
 from datetime import datetime
 
 DELAY_MIN = 1.0
 DELAY_MAX = 3.0
+
+def _get_system_proxy():
+    """从 Windows 注册表读取系统代理设置，返回 http://host:port 或 None"""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+        )
+        enable, _ = winreg.QueryValueEx(key, "ProxyEnable")
+        if not enable:
+            return None
+        server, _ = winreg.QueryValueEx(key, "ProxyServer")
+        winreg.CloseKey(key)
+        if not server:
+            return None
+        # 格式可能是 "host:port" 或 "http=host:port;https=host:port;..."
+        if "=" in server:
+            # 多协议格式，优先取 https，其次 http
+            parts = dict(p.split("=", 1) for p in server.split(";") if "=" in p)
+            addr = parts.get("https") or parts.get("http")
+            if addr:
+                return f"http://{addr}" if not addr.startswith("http") else addr
+            return None
+        else:
+            return f"http://{server}" if not server.startswith("http") else server
+    except (OSError, FileNotFoundError, ValueError):
+        return None
+
+
+def _resolve_proxy():
+    """按优先级获取代理：环境变量 > 系统代理 > 默认值"""
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+    if proxy:
+        return proxy
+    sys_proxy = _get_system_proxy()
+    if sys_proxy:
+        return sys_proxy
+    return "http://127.0.0.1:1829"
 
 def _hms_to_sec(t):
     parts = t.strip().split(":")
@@ -202,26 +242,35 @@ def download_video(video_url, output_dir,
         "outtmpl": temp_path,
         "quiet": False,
         "no_warnings": False,
+        "noprogress": False,
+        "progress_with_newline": True,
         "js_runtimes": {"deno": {"path": _DENO_PATH}},
         "remote_components": ["ejs:github"],
-        "logger": _YtdlpLogger(log),
+        "logger": _YtdlpLogger(log, progress_callback=progress_hook),
         "ffmpeg_location": os.path.dirname(_FFMPEG_PATH),
     }
 
     # 时间区间裁剪：使用 yt-dlp 原生的 download_ranges，保持最高画质
+    need_trim = False
     if time_start or time_end:
         from yt_dlp.utils import download_range_func
         start_sec = _hms_to_sec(time_start) if time_start else 0
         end_sec   = _hms_to_sec(time_end) if time_end else float('inf')
         ydl_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
         ydl_opts["force_keyframes_at_cuts"] = True
+        need_trim = True
         # ffmpeg 下载分段时需要代理和 UA 才能连接 Google 视频服务器
         ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or "http://127.0.0.1:1829"
+        proxy = _resolve_proxy()
         ydl_opts["external_downloader_args"] = {
             "ffmpeg_i": ["-user_agent", ua, "-http_proxy", proxy],
         }
         log(f"  时间区间: {time_start or '开头'} → {time_end or '结尾'}")
+
+    # 全局代理设置，让 yt-dlp 本身的下载也走代理
+    proxy = _resolve_proxy()
+    ydl_opts["proxy"] = proxy
+    log(f"  使用代理: {proxy}")
 
     if progress_hook:
         ydl_opts["progress_hooks"] = [progress_hook]
@@ -285,21 +334,80 @@ def download_video(video_url, output_dir,
 
 
 class _YtdlpLogger:
-    """把 yt-dlp 内部日志转发到 log 回调"""
-    def __init__(self, log_fn, filter_tab=False):
+    """把 yt-dlp 内部日志转发到 log 回调，同时解析进度信息"""
+    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+    # 匹配多种 yt-dlp 进度格式：
+    # [download]  45.2% of ~  50.00MiB at    5.00MiB/s ETA 00:05
+    # [download]  45.2% of 50.00MiB at 5.00MiB/s ETA 00:05
+    # [download] 100% of 50.00MiB
+    _PROGRESS_RE = re.compile(
+        r'\[download\]\s+([\d.]+)%'
+        r'(?:\s+of\s+~?\s*([\d.]+\S+))?'
+        r'(?:\s+at\s+([\d.]+\S+))?'
+        r'(?:\s+ETA\s+(\S+))?'
+    )
+
+    def __init__(self, log_fn, filter_tab=False, progress_callback=None):
         self._log = log_fn
         self._filter_tab = filter_tab
+        self._progress_callback = progress_callback
+
+    def _clean(self, msg):
+        """去除 ANSI 转义码，确保纯文本输出"""
+        return self._ANSI_RE.sub('', msg)
+
+    def _try_parse_progress(self, msg):
+        """尝试解析 yt-dlp 输出的下载进度行并通知 GUI"""
+        if not self._progress_callback:
+            return False
+        m = self._PROGRESS_RE.search(msg)
+        if m:
+            pct = m.group(1)
+            size = m.group(2) or "N/A"
+            speed = m.group(3) or "N/A"
+            eta = m.group(4) or "N/A"
+            self._progress_callback({
+                "status": "downloading",
+                "_percent_str": f"{pct}%",
+                "_speed_str": speed,
+                "_eta_str": eta,
+                "_total_bytes_str": size,
+            })
+            # 100% 时额外发一个 finished
+            try:
+                if float(pct) >= 100:
+                    self._progress_callback({
+                        "status": "finished",
+                        "_total_bytes_str": size,
+                    })
+            except ValueError:
+                pass
+            return True
+        return False
+
     def debug(self, msg):
+        msg = self._clean(msg)
         if msg.startswith("[debug]"):
             return
         if self._filter_tab and "[youtube:tab]" in msg:
             return
-        self._log(msg)
-    def info(self, msg):
-        if self._filter_tab and "[youtube:tab]" in msg:
+        # 进度行只通知 GUI，不重复写入日志（避免刷屏）
+        if self._try_parse_progress(msg):
             return
         self._log(msg)
+
+    def info(self, msg):
+        msg = self._clean(msg)
+        if self._filter_tab and "[youtube:tab]" in msg:
+            return
+        if self._try_parse_progress(msg):
+            return
+        self._log(msg)
+
     def warning(self, msg):
+        msg = self._clean(msg)
         self._log(f"[警告] {msg}")
+
     def error(self, msg):
+        msg = self._clean(msg)
         self._log(f"[错误] {msg}")
