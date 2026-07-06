@@ -1,5 +1,7 @@
 import os
 import subprocess
+
+from paths import ffmpeg_bin
 """
 功能：把字幕烤录进视频用的
 临时文件夹作用：由于被ffmpeg路径搞破防，这里怕中文路径不行，
@@ -40,7 +42,10 @@ def burn_subtitles(input_video, subtitle_file, output_video,
     shutil.copy2(subtitle_file, tmp_sub)
     log("  复制完成")
     log("─" * 60)
-    ffmpeg_exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), r"ffmpeg\bin\ffmpeg.exe")
+    ffmpeg_exe = ffmpeg_bin()
+    if not os.path.isfile(ffmpeg_exe):
+        log(f"❌ 找不到 ffmpeg: {ffmpeg_exe}")
+        return False
     os.chdir(work_dir)
 
     vf_value = f"subtitles=subtitle{ext}"

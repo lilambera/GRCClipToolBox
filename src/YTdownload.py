@@ -11,6 +11,8 @@ import traceback
 import winreg
 from datetime import datetime
 
+from paths import deno_bin, ffmpeg_bin
+
 DELAY_MIN = 1.0
 DELAY_MAX = 3.0
 
@@ -61,22 +63,44 @@ def _hms_to_sec(t):
         return parts[0] * 60 + parts[1]
     return parts[0]
 
-def _get_base_dir():
-    if getattr(sys, 'frozen', False):
-        return sys._MEIPASS  # _internal 目录
-    return os.path.dirname(os.path.abspath(__file__))
+_DENO_PATH = deno_bin()
+_FFMPEG_PATH = ffmpeg_bin()
+_FFMPEG_DIR = os.path.dirname(_FFMPEG_PATH)
 
-_BASE = _get_base_dir()
-_DENO_PATH = os.path.join(_BASE, "deno", "deno.exe")
-_FFMPEG_PATH = os.path.join(_BASE, "ffmpeg", "bin", "ffmpeg.exe")
+
+def _setup_ytdlp_ffmpeg():
+    """CLI 会自动设置；Python API 必须手动设置，否则分段下载/合并检测不到 ffmpeg。"""
+    from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+
+    FFmpegPostProcessor._ffmpeg_location.set(_FFMPEG_PATH)
+
+
+def _ytdlp_ffmpeg_status():
+    from yt_dlp.downloader.external import FFmpegFD
+    from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+
+    pp = FFmpegPostProcessor()
+    return pp.available, FFmpegFD.available()
+
+
+def _common_ydl_opts(log, **extra):
+    _setup_ytdlp_ffmpeg()
+    opts = {
+        "ffmpeg_location": _FFMPEG_PATH,
+        "js_runtimes": {"deno": {"path": _DENO_PATH}},
+    }
+    opts.update(extra)
+    return opts
 
 def ensure_ejs():
     try:
+        _setup_ytdlp_ffmpeg()
         with yt_dlp.YoutubeDL({
             "quiet": True,
             "no_warnings": True,
             "remote_components": ["ejs:github"],
             "js_runtimes": [f"deno:{_DENO_PATH}"],
+            "ffmpeg_location": _FFMPEG_PATH,
         }) as ydl:
             pass
     except Exception:
@@ -109,13 +133,13 @@ def get_channel_videos(channel_url, start_date, end_date=None,
     date_start_str = start_date.strftime("%Y%m%d")
     date_end_str = end_date.strftime("%Y%m%d") if end_date else None
 
-    ydl_opts = {
-        "quiet":           True,
-        "no_warnings":     True,
-        "extract_flat":    True,
-        "js_runtimes": {"deno": {"path": _DENO_PATH}},
-        "logger": _YtdlpLogger(log, filter_tab=True)
-    }
+    ydl_opts = _common_ydl_opts(
+        log,
+        quiet=True,
+        no_warnings=True,
+        extract_flat=True,
+        logger=_YtdlpLogger(log, filter_tab=True),
+    )
     ydl_opts, tmp = _apply_cookie(ydl_opts, cookie_path)
     tmp2 = None
 
@@ -130,7 +154,7 @@ def get_channel_videos(channel_url, start_date, end_date=None,
                 return videos
 
             entries = list(result["entries"])
-            detail_opts = {"quiet": True, "no_warnings": True,"js_runtimes": {"deno": {"path": _DENO_PATH}}}
+            detail_opts = _common_ydl_opts(log, quiet=True, no_warnings=True)
             detail_opts, tmp2 = _apply_cookie(detail_opts, cookie_path)
 
             with yt_dlp.YoutubeDL(detail_opts) as ydl2:
@@ -188,21 +212,26 @@ def download_video(video_url, output_dir,
                    cookie_path=None, log=print, progress_hook=None):
 
     # 启动时打印路径信息，方便排查
-    log(f"[调试] _BASE     = {_BASE}")
     log(f"[调试] DENO路径  = {_DENO_PATH}  存在={os.path.isfile(_DENO_PATH)}")
     log(f"[调试] FFMPEG路径= {_FFMPEG_PATH}  存在={os.path.isfile(_FFMPEG_PATH)}")
+    _setup_ytdlp_ffmpeg()
+    pp_ok, fd_ok = _ytdlp_ffmpeg_status()
+    log(f"[调试] yt-dlp识别ffmpeg={pp_ok}, 分段下载可用={fd_ok}")
+    if (time_start or time_end) and not fd_ok:
+        log("❌ yt-dlp 未识别到 ffmpeg，无法使用时间段下载")
+        return False, ""
 
     os.makedirs(output_dir, exist_ok=True)
 
     # 基本信息获取
-    info_opts = {
-        "quiet": False,
-        "no_warnings": False,
-        "skip_download": True,
-        "js_runtimes": {"deno": {"path": _DENO_PATH}},
-        "remote_components": ["ejs:github"],
-        "logger": _YtdlpLogger(log),
-    }
+    info_opts = _common_ydl_opts(
+        log,
+        quiet=False,
+        no_warnings=False,
+        skip_download=True,
+        remote_components=["ejs:github"],
+        logger=_YtdlpLogger(log),
+    )
     info_opts, tmp_c = _apply_cookie(info_opts, cookie_path)
     title = "video"
     upload_date = ""
@@ -237,18 +266,17 @@ def download_video(video_url, output_dir,
     else:
         fmt = "bestvideo[ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a][protocol!*=m3u8]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
-    ydl_opts = {
-        "format": fmt,
-        "outtmpl": temp_path,
-        "quiet": False,
-        "no_warnings": False,
-        "noprogress": False,
-        "progress_with_newline": True,
-        "js_runtimes": {"deno": {"path": _DENO_PATH}},
-        "remote_components": ["ejs:github"],
-        "logger": _YtdlpLogger(log, progress_callback=progress_hook),
-        "ffmpeg_location": os.path.dirname(_FFMPEG_PATH),
-    }
+    ydl_opts = _common_ydl_opts(
+        log,
+        format=fmt,
+        outtmpl=temp_path,
+        quiet=False,
+        no_warnings=False,
+        noprogress=False,
+        progress_with_newline=True,
+        remote_components=["ejs:github"],
+        logger=_YtdlpLogger(log, progress_callback=progress_hook),
+    )
 
     # 时间区间裁剪：使用 yt-dlp 原生的 download_ranges，保持最高画质
     need_trim = False

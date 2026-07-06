@@ -15,12 +15,9 @@ from TimeStamps import ass_timestamps
 from YTdownload import get_channel_videos, download_video
 from CookiesGain import get_youtube_cookies
 from whisperLocal import whisper_trans
+from paths import get_app_dir, get_resource_dir
 
-def _get_base_dir():
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(_get_base_dir(), "config.json")
+CONFIG_FILE = os.path.join(get_app_dir(), "config.json")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -970,10 +967,7 @@ def whisper_gui(parent):
 def gui():
     root = tk.Tk()
     root.title("自用工具整合")
-    if getattr(sys, 'frozen', False):
-        icon_path = os.path.join(sys._MEIPASS, "icon.ico")
-    else:
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+    icon_path = os.path.join(get_resource_dir(), "icon.ico")
     if os.path.exists(icon_path):
         root.iconbitmap(icon_path)
     notebook = ttk.Notebook(root)
