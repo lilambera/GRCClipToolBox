@@ -1,6 +1,7 @@
 # ClipBox（GRCClipToolBox）
 
 视频处理与字幕工具，包含 **Windows 桌面端** 与 **Android 端**。
+Android端口处于开发阶段不可使用
 
 | 目录 | 说明 |
 |------|------|
