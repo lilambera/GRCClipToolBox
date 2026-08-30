@@ -2,7 +2,7 @@ from faster_whisper import WhisperModel
 import os
 from multiprocessing import Process, Queue
 
-def _worker(q, model_path, audio_path, output_dir, engine, compute_type, threads, workers, language, vad):
+def _worker(q, model_path, audio_path, output_file, engine, compute_type, threads, workers, language, vad):
     try:
         model = WhisperModel(model_path, device=engine, compute_type=compute_type,
                              cpu_threads=threads, num_workers=workers)
@@ -20,9 +20,9 @@ def _worker(q, model_path, audio_path, output_dir, engine, compute_type, threads
             ms = int((seconds % 1) * 1000)
             return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-        os.makedirs(output_dir, exist_ok=True)
-        name = os.path.splitext(os.path.basename(audio_path))[0]
-        output_file = os.path.join(output_dir, name + ".srt")
+        out_dir = os.path.dirname(os.path.abspath(output_file))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
 
         with open(output_file, "w", encoding="utf-8") as f:
             for i, segment in enumerate(segments, start=1):
@@ -38,14 +38,14 @@ def _worker(q, model_path, audio_path, output_dir, engine, compute_type, threads
         q.put(("error", str(e)))
 
 
-def whisper_trans(model_path, audio_path, output_dir, engine,
+def whisper_trans(model_path, audio_path, output_file, engine,
     compute_type, threads, workers, language, vad, log_callback
 ):
     log_callback("▶ 开始转录，请稍候…")
 
     q = Queue()
     p = Process(target=_worker, args=(
-        q, model_path, audio_path, output_dir,
+        q, model_path, audio_path, output_file,
         engine, compute_type, threads, workers, language, vad
     ))
     p.start()
@@ -57,8 +57,8 @@ def whisper_trans(model_path, audio_path, output_dir, engine,
         elif msg[0] == "done":
             p.join()
             log_callback(f"字幕已保存到 {msg[1]}")
-            return True, output_dir, ""
+            return True, output_file, ""
         elif msg[0] == "error":
             p.join()
             log_callback(f"❌ 错误: {msg[1]}")
-            return False, output_dir, msg[1]
+            return False, output_file, msg[1]

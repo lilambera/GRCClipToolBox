@@ -221,7 +221,9 @@ def download_video(video_url, output_dir,
         log("❌ yt-dlp 未识别到 ffmpeg，无法使用时间段下载")
         return False, ""
 
-    os.makedirs(output_dir, exist_ok=True)
+    custom_name = os.path.splitext(output_dir)[1]
+    save_dir = os.path.dirname(os.path.abspath(output_dir)) if custom_name else output_dir
+    os.makedirs(save_dir or ".", exist_ok=True)
 
     # 基本信息获取
     info_opts = _common_ydl_opts(
@@ -249,13 +251,14 @@ def download_video(video_url, output_dir,
     finally:
         _cleanup(tmp_c)
 
-    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)
-    date_prefix = ""
-    if upload_date and len(upload_date) == 8:
-        date_prefix = datetime.strptime(upload_date, "%Y%m%d").strftime("%m_%d_")
-
-    temp_path  = os.path.join(output_dir, f"{date_prefix}{safe_title}_temp.mp4")
-    final_path = os.path.join(output_dir, f"{date_prefix}{safe_title}.mp4")
+    if custom_name:
+        name = os.path.splitext(os.path.basename(output_dir))[0]
+    else:
+        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)
+        if upload_date and len(upload_date) == 8:
+            name = datetime.strptime(upload_date, "%Y%m%d").strftime("%m_%d_") + name
+    temp_path  = os.path.join(save_dir, f"{name}_temp.mp4")
+    final_path = os.path.join(save_dir, f"{name}.mp4")
     log(f"[调试] 临时文件  = {temp_path}")
     log(f"[调试] 输出文件  = {final_path}")
 

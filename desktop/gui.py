@@ -435,25 +435,38 @@ def ytDownload_gui(parent):
         row=0, column=1, sticky="w")
 
     #时间区间切片
-    frame_time = ttk.LabelFrame(parent, text="视频时间区间（留空默认完整视频）", padding=10)
+    frame_time = ttk.LabelFrame(parent, text="视频时间区间（全为 0 则下载完整视频）", padding=10)
     frame_time.grid(row=2, column=0, sticky="ew", **pad)
 
-    var_t_start = tk.StringVar()
-    var_t_end   = tk.StringVar()
+    def make_hms(parent):
+        vars_ = [tk.IntVar(value=0) for _ in range(3)]
+        frm = ttk.Frame(parent)
+        for i, (var, mx) in enumerate(zip(vars_, (99, 59, 59))):
+            if i:
+                ttk.Label(frm, text=":").pack(side="left")
+            ttk.Spinbox(frm, from_=0, to=mx, textvariable=var, width=3).pack(side="left")
+        return frm, vars_
+
+    def hms_str(vars_):
+        try:
+            h, m, s = (int(v.get()) for v in vars_)
+        except (tk.TclError, ValueError):
+            return None
+        if h == m == s == 0:
+            return None
+        return f"{h:02d}:{m:02d}:{s:02d}"
 
     ttk.Label(frame_time, text="开始时间", width=10, anchor="e").grid(
         row=0, column=0, sticky="e", padx=(0, 6))
-    ent_t_start = ttk.Entry(frame_time, textvariable=var_t_start, width=12)
-    ent_t_start.grid(row=0, column=1, sticky="w")
-    ttk.Label(frame_time, text="格式：HH:MM:SS", foreground="gray").grid(
-        row=0, column=2, sticky="w", padx=(6, 24))
+    frm_t_start, var_t_start = make_hms(frame_time)
+    frm_t_start.grid(row=0, column=1, sticky="w")
 
     ttk.Label(frame_time, text="结束时间", width=10, anchor="e").grid(
-        row=0, column=3, sticky="e", padx=(0, 6))
-    ent_t_end = ttk.Entry(frame_time, textvariable=var_t_end, width=12)
-    ent_t_end.grid(row=0, column=4, sticky="w")
-    ttk.Label(frame_time, text="格式：HH:MM:SS", foreground="gray").grid(
-        row=0, column=5, sticky="w", padx=(6, 0))
+        row=0, column=2, sticky="e", padx=(24, 6))
+    frm_t_end, var_t_end = make_hms(frame_time)
+    frm_t_end.grid(row=0, column=3, sticky="w")
+    ttk.Label(frame_time, text="时 : 分 : 秒", foreground="gray").grid(
+        row=0, column=4, sticky="w", padx=(8, 0))
 
     #频道日期区间
     frame_date = ttk.LabelFrame(parent, text="频道日期区间（批量模式专用）", padding=10)
@@ -484,13 +497,18 @@ def ytDownload_gui(parent):
     var_save_dir = tk.StringVar(value=config.get("yt_save_dir", ""))
 
     def browse_save():
-        path = filedialog.askdirectory(title="选择保存目录")
+        if var_mode.get() == "single":
+            path = filedialog.asksaveasfilename(
+                title="保存视频文件", defaultextension=".mp4",
+                filetypes=[("MP4 文件", "*.mp4"), ("所有文件", "*.*")])
+        else:
+            path = filedialog.askdirectory(title="选择保存目录")
         if path:
             var_save_dir.set(path)
             config["yt_save_dir"] = path
             save_config(config)
 
-    ttk.Label(frame_path, text="保存目录", width=8, anchor="e").grid(
+    ttk.Label(frame_path, text="输出路径", width=8, anchor="e").grid(
         row=0, column=0, sticky="e", padx=(0, 6))
     ttk.Entry(frame_path, textvariable=var_save_dir, width=58).grid(
         row=0, column=1, sticky="ew")
@@ -607,15 +625,17 @@ def ytDownload_gui(parent):
         url         = var_url.get().strip()
         save_dir    = var_save_dir.get().strip()
         cookie_path = var_cookie_path.get().strip() if var_use_cookie.get() else None
-        t_start     = var_t_start.get().strip() or None
-        t_end       = var_t_end.get().strip()   or None
+        t_start     = hms_str(var_t_start)
+        t_end       = hms_str(var_t_end)
 
         if not url:
             messagebox.showwarning("缺少参数", "请粘贴视频或频道 URL！")
             return
         if not save_dir:
-            messagebox.showwarning("缺少参数", "请选择保存目录！")
+            messagebox.showwarning("缺少参数", "请选择保存位置！")
             return
+        if var_mode.get() != "single" and os.path.splitext(save_dir)[1]:
+            save_dir = os.path.dirname(os.path.abspath(save_dir)) or "."
 
         btn.configure(state="disabled", text="处理中…")
         var_progress.set("")
@@ -787,7 +807,7 @@ def whisper_gui(parent):
     frame_input.columnconfigure(1, weight=1)
 
     var_audio_path = tk.StringVar()
-    var_output_dir = tk.StringVar()
+    var_output = tk.StringVar()
 
     def make_row2(parent, row, label, var, browse_fn):
         ttk.Label(parent, text=label, width=10, anchor="e").grid(
@@ -807,16 +827,18 @@ def whisper_gui(parent):
         )
         if path:
             var_audio_path.set(path)
-            if not var_output_dir.get():
-                var_output_dir.set(os.path.dirname(os.path.abspath(path)))
+            if not var_output.get():
+                var_output.set(os.path.splitext(os.path.abspath(path))[0] + ".srt")
 
-    def browse_output_dir():
-        path = filedialog.askdirectory(title="选择输出目录")
+    def browse_output():
+        path = filedialog.asksaveasfilename(
+            title="保存字幕文件", defaultextension=".srt",
+            filetypes=[("SRT 字幕", "*.srt"), ("所有文件", "*.*")])
         if path:
-            var_output_dir.set(path)
+            var_output.set(path)
 
     make_row2(frame_input, 0, "音频/视频", var_audio_path, browse_audio)
-    make_row2(frame_input, 1, "输出目录",  var_output_dir, browse_output_dir)
+    make_row2(frame_input, 1, "输出路径",  var_output, browse_output)
 
     #转录参数
     frame_param = ttk.LabelFrame(parent, text="转录参数", padding=10)
@@ -906,7 +928,7 @@ def whisper_gui(parent):
     def start():
         model_path = var_model_path.get().strip()
         audio_path = var_audio_path.get().strip()
-        output_dir = var_output_dir.get().strip()
+        output_file = var_output.get().strip()
 
         if not model_path:
             messagebox.showwarning("缺少参数", "请选择 Whisper 模型路径")
@@ -914,8 +936,8 @@ def whisper_gui(parent):
         if not audio_path:
             messagebox.showwarning("缺少参数", "请选择音频/视频文件")
             return
-        if not output_dir:
-            messagebox.showwarning("缺少参数", "请选择输出目录")
+        if not output_file:
+            messagebox.showwarning("缺少参数", "请填写输出路径")
             return
         if not os.path.isfile(audio_path):
             messagebox.showerror("文件不存在", f"找不到音频文件：\n{audio_path}")
@@ -936,7 +958,7 @@ def whisper_gui(parent):
                 success, out, msg =whisper_trans(
                     model_path   = model_path,
                     audio_path   = audio_path,
-                    output_dir   = output_dir,
+                    output_file  = output_file,
                     engine       = engine,
                     compute_type = compute_type,
                     threads      = threads,
@@ -947,18 +969,18 @@ def whisper_gui(parent):
                 )
                 if not success:
                     append_log(f"❌ 错误: {msg}")
-                parent.after(0, on_done, success, output_dir)
+                parent.after(0, on_done, success, out)
             except Exception as e:
                 append_log(f"❌ 异常: {e}")
-                parent.after(0, on_done, False, output_dir)
+                parent.after(0, on_done, False, output_file)
 
         threading.Thread(target=task, daemon=True).start()
 
-    def on_done(success, out_dir):
+    def on_done(success, out_path):
         btn_run.configure(state="normal", text="▶  开始转录")
         if success:
-            if messagebox.askyesno("完成", f"转录完成！\n\n输出目录：{out_dir}\n\n是否打开？"):
-                os.startfile(os.path.abspath(out_dir))
+            if messagebox.askyesno("完成", f"转录完成！\n\n{out_path}\n\n是否打开所在文件夹？"):
+                os.startfile(os.path.dirname(os.path.abspath(out_path)))
         else:
             messagebox.showerror("失败", "转录过程中发生错误，请查看日志。")
 
