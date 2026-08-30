@@ -1,92 +1,40 @@
-# 管人吃烤肉工具集 (GRCClipToolBox)
+# ClipBox（GRCClipToolBox）
 
-视频处理与字幕烧录桌面工具，支持 YouTube 下载、Whisper 字幕生成等功能。
+视频处理与字幕工具，包含 **Windows 桌面端** 与 **Android 端**。
 
-## 功能
+| 目录 | 说明 |
+|------|------|
+| [`desktop/`](desktop/) | Python 桌面版：YouTube 下载、Whisper 字幕、字幕烧录等 |
+| [`android/`](android/) | Android 版（Kotlin + Jetpack Compose） |
 
-- 字幕烧录到视频
-- YouTube 视频下载（支持批量抓取直播窗）
-- 基于 faster-whisper 的字幕生成（需自行下载模型）
-- ASS → TXT、YouTube 字幕重断句、时间戳提取
-- YouTube Cookies 获取
-
-## 环境要求
-
-- Windows 10/11
-- Python 3.10+
-- （可选）NVIDIA GPU + CUDA，用于 Whisper GPU 加速
-
-## 快速开始
-
-### 1. 克隆并安装 Python 依赖
+## 桌面端
 
 ```powershell
-git clone https://github.com/lilambera/GRCClipToolBox.git
-cd GRCClipToolBox
+cd desktop
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### 2. 准备 ffmpeg 与 deno（打包和下载功能需要）
-
-这两个目录体积较大，未纳入 Git。可手动放置，或运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup_deps.ps1
-```
-
-目录结构：
-
-```
-GRCClipToolBox/
-  ffmpeg/
-    bin/
-      ffmpeg.exe
-      ffprobe.exe
-  deno/
-    deno.exe
-```
-
-### 3. 配置文件
-
-```powershell
 copy config.json.example config.json
-```
-
-按需编辑 `config.json` 中的路径与 Whisper 参数。
-
-### 4. 运行
-
-```powershell
 python main.py
 ```
 
-## 打包为 exe
+详细说明见 [desktop/README.md](desktop/README.md)。
 
-确保 `ffmpeg/`、`deno/`、`config.json`、`icon.ico` 已就绪后：
+## Android 端
 
-```powershell
-pyinstaller main.spec
-```
-
-输出在 `dist/main/`。可用以下命令验证打包结果：
+用 Android Studio 打开 `android/` 目录即可构建运行。
 
 ```powershell
-python verify_bundle.py
-python verify_bundle.py --launch-gui
+cd android
+.\gradlew assembleDebug
 ```
 
-## 不应提交的文件
+## 仓库说明
 
-以下文件已在 `.gitignore` 中排除：
+本仓库整合了原先的两个项目：
 
-| 路径 | 原因 |
-|------|------|
-| `dist/`, `build/` | PyInstaller 构建产物（约 2GB） |
-| `ffmpeg/`, `deno/` | 大型二进制依赖 |
-| `config.json` | 含本机绝对路径 |
-| `cookies.txt` | YouTube 登录凭证 |
+- 桌面端：[GRCClipToolBox](https://github.com/lilambera/GRCClipToolBox)
+- Android 端：[ClipBox-android](https://github.com/lilambera/ClipBox-android)（已迁入 `android/`，旧仓库可 archive）
 
 ## License
 

@@ -1,5 +1,6 @@
-# Python
-__pycache__/
+# Python (desktop)
+desktop/__pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.egg-info/
@@ -13,7 +14,9 @@ venv/
 env/
 .venv/
 
-# PyInstaller build output (very large, do not commit)
+# Desktop PyInstaller output
+desktop/build/
+desktop/dist/
 build/
 dist/
 
@@ -27,19 +30,33 @@ dist/
 Thumbs.db
 desktop.ini
 
-# User-specific config and secrets
+# Desktop user config and secrets
+desktop/config.json
 config.json
+desktop/cookies.txt
 cookies.txt
+desktop/youtube_cookies.txt
 youtube_cookies.txt
 *.cookies
 
-# Local temp / work directories
+# Desktop local temp / work directories
+desktop/tempt/
 tempt/
 subtitle_workdir/
 
-# Large bundled binaries — download locally (see README)
+# Large bundled binaries — download locally (see desktop/README.md)
+desktop/ffmpeg/
+desktop/deno/
 ffmpeg/
 deno/
 
-# Legacy nested copy (local only)
-toolbox/
+# Android
+android/.gradle/
+android/local.properties
+android/.idea/
+android/**/build/
+android/**/.cxx/
+android/**/.externalNativeBuild/
+*.iml
+android/.DS_Store
+android/captures/
