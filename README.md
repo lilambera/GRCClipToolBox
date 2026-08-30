@@ -1,6 +1,7 @@
 # ClipBox（GRCClipToolBox）
 
 视频处理与字幕工具，包含 **Windows 桌面端** 与 **Android 端**。
+Android端口处于开发阶段不可使用
 
 | 目录 | 说明 |
 |------|------|
@@ -28,14 +29,6 @@ python main.py
 cd android
 .\gradlew assembleDebug
 ```
-
-## 仓库说明
-
-本仓库整合了原先的两个项目：
-
-- 桌面端：[GRCClipToolBox](https://github.com/lilambera/GRCClipToolBox)
-- Android 端：[ClipBox-android](https://github.com/lilambera/ClipBox-android)（已迁入 `android/`，旧仓库可 archive）
-
 ## License
 
 MIT License
