@@ -29,14 +29,6 @@ python main.py
 cd android
 .\gradlew assembleDebug
 ```
-
-## 仓库说明
-
-本仓库整合了原先的两个项目：
-
-- 桌面端：[GRCClipToolBox](https://github.com/lilambera/GRCClipToolBox)
-- Android 端：[ClipBox-android](https://github.com/lilambera/ClipBox-android)（已迁入 `android/`，旧仓库可 archive）
-
 ## License
 
 MIT License
