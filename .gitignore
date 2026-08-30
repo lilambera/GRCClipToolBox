@@ -41,5 +41,5 @@ subtitle_workdir/
 ffmpeg/
 deno/
 
-# Nested legacy repo (already on GitHub as GRCClipToolBox)
+# Legacy nested copy (local only)
 toolbox/

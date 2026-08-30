@@ -1,4 +1,4 @@
-# 管人吃烤肉工具集 (videofloder)
+# 管人吃烤肉工具集 (GRCClipToolBox)
 
 视频处理与字幕烧录桌面工具，支持 YouTube 下载、Whisper 字幕生成等功能。
 
@@ -21,8 +21,8 @@
 ### 1. 克隆并安装 Python 依赖
 
 ```powershell
-git clone <your-repo-url>
-cd videofloder
+git clone https://github.com/lilambera/GRCClipToolBox.git
+cd GRCClipToolBox
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -30,10 +30,16 @@ pip install -r requirements.txt
 
 ### 2. 准备 ffmpeg 与 deno（打包和下载功能需要）
 
-这两个目录体积较大，未纳入 Git。请手动放置：
+这两个目录体积较大，未纳入 Git。可手动放置，或运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_deps.ps1
+```
+
+目录结构：
 
 ```
-videofloder/
+GRCClipToolBox/
   ffmpeg/
     bin/
       ffmpeg.exe
@@ -41,9 +47,6 @@ videofloder/
   deno/
     deno.exe
 ```
-
-- **ffmpeg**：从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载 Windows build，解压后将 `bin` 目录放到 `ffmpeg/bin/`。
-- **deno**：从 [deno.land](https://deno.land/) 下载 Windows 可执行文件，放到 `deno/deno.exe`。
 
 ### 3. 配置文件
 
@@ -84,7 +87,6 @@ python verify_bundle.py --launch-gui
 | `ffmpeg/`, `deno/` | 大型二进制依赖 |
 | `config.json` | 含本机绝对路径 |
 | `cookies.txt` | YouTube 登录凭证 |
-| `toolbox/` | 旧版嵌套 Git 仓库 |
 
 ## License
 
