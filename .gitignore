@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.env
+.env.*
+venv/
+env/
+.venv/
+
+# PyInstaller build output (very large, do not commit)
+build/
+dist/
+
+# IDE / editor
+.idea/
+.vscode/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# User-specific config and secrets
+config.json
+cookies.txt
+youtube_cookies.txt
+*.cookies
+
+# Local temp / work directories
+tempt/
+subtitle_workdir/
+
+# Large bundled binaries — download locally (see README)
+ffmpeg/
+deno/
+
+# Nested legacy repo (already on GitHub as GRCClipToolBox)
+toolbox/

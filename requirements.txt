@@ -1,0 +1,8 @@
+yt-dlp>=2026.3.3
+faster-whisper>=1.2.1
+ctranslate2>=4.7.1
+ffmpeg-python>=0.2.0
+undetected-chromedriver>=3.5.5
+selenium>=4.0.0
+browser-cookie3>=0.20.1
+pyinstaller>=6.19.0
