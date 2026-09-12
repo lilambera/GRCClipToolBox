@@ -4,8 +4,8 @@
 重点：
   - 请测 dist/main/main.exe，不要测 python main.py（后者一定走开发环境）
   - 打包后的 main.exe 不会用本机 Python/conda 里的库
-  - ffmpeg/deno 走 paths.py 的绝对路径，理论上不应吃到 PATH 里的全局 ffmpeg
-  - 本脚本会额外把 PATH/conda 清掉再跑一遍，做双重确认
+  - ffmpeg/deno 已改为 bundled 资源：paths.py 在打包后指向 _internal，不依赖系统 PATH
+  - 本脚本会额外把 PATH/conda 清掉再跑一遍，确认包内工具自己能执行
 
 用法:
   python verify_bundle.py
@@ -202,7 +202,8 @@ def print_manual_tips(copied_dir: str | None) -> None:
     print("\n=== 怎么理解测试结果 ===")
     print("1. python main.py 只能测开发环境，不能代表打包结果。")
     print("2. main.exe 里的 Python 库来自 _internal，不会读你 conda 里的 site-packages。")
-    print("3. 你的代码对 ffmpeg/deno 用的是绝对路径，正常不应依赖 PATH 里的全局 ffmpeg。")
+    print("3. ffmpeg/deno 走 bundled 路径（_internal/ffmpeg、_internal/deno），不依赖系统 PATH。")
+    print("   干净电脑上已经能跑通的话，这块可以视为没问题；本脚本只是打包后复查文件是否还在。")
     print("4. 仍可能依赖本机的东西：")
     print("   - Chrome（Cookie 获取功能，本来就要装 Chrome）")
     print("   - NVIDIA 驱动/CUDA（Whisper GPU 模式；CPU 模式更独立）")
