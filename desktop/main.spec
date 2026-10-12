@@ -40,6 +40,7 @@ binaries += collect_dynamic_libs("ctranslate2")
 
 hiddenimports = [
     "paths",
+    "bilibili_download",
     "yt_dlp",
     "faster_whisper",
     "undetected_chromedriver",

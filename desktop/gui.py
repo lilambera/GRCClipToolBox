@@ -13,7 +13,7 @@ from AssToTxt import extract_ass_text
 from YTTxtReformat import reformat_text
 from TimeStamps import ass_timestamps
 from YTdownload import get_channel_videos, download_video
-from CookiesGain import get_youtube_cookies
+from CookiesGain import get_bilibili_cookies, get_youtube_cookies
 from whisperLocal import whisper_trans
 from paths import get_app_dir, get_resource_dir
 
@@ -518,40 +518,79 @@ def ytDownload_gui(parent):
     #Cookie
     frame_cookie = ttk.LabelFrame(parent, text="Cookie", padding=10)
     frame_cookie.grid(row=5, column=0, sticky="ew", **pad)
-    frame_cookie.columnconfigure(1, weight=1)
+    frame_cookie.columnconfigure(2, weight=1)
 
-    var_use_cookie  = tk.BooleanVar(value=bool(config.get("yt_cookie_path", "")))
-    var_cookie_path = tk.StringVar(value=config.get("yt_cookie_path", ""))
+    def cookie_key(site):
+        return "bili_cookie_path" if site == "bilibili" else "yt_cookie_path"
+
+    # 旧配置只有一条路径。文件名像 B 站 Cookie 时归到 bilibili，避免占着 youtube 的位置。
+    if "bili_cookie_path" not in config and "bilibili" in os.path.basename(config.get("yt_cookie_path", "")).lower():
+        config["bili_cookie_path"] = config.get("yt_cookie_path", "")
+        config["yt_cookie_path"] = ""
+        config["cookie_site"] = "bilibili"
+        save_config(config)
+
+    cookie_site = config.get("cookie_site", "youtube")
+    if cookie_site not in ("youtube", "bilibili"):
+        cookie_site = "youtube"
+    active_cookie_path = config.get(cookie_key(cookie_site), "")
+
+    var_use_cookie  = tk.BooleanVar(value=config.get("use_cookie", bool(active_cookie_path)))
+    var_cookie_site = tk.StringVar(value=cookie_site)
+    var_cookie_path = tk.StringVar(value=active_cookie_path)
+    shown_cookie_site = [cookie_site]
+
+    def set_cookie_controls():
+        enabled = "normal" if var_use_cookie.get() else "disabled"
+        ent_cookie.configure(state=enabled)
+        btn_cookie.configure(state=enabled)
 
     def on_cookie_toggle():
-        ent_cookie.configure(state="normal" if var_use_cookie.get() else "disabled")
-        btn_cookie.configure(state="normal" if var_use_cookie.get() else "disabled")
-        if not var_use_cookie.get():
-            var_cookie_path.set("")
-            config["yt_cookie_path"] = ""
-            save_config(config)
+        config["use_cookie"] = var_use_cookie.get()
+        save_config(config)
+        set_cookie_controls()
+
+    def on_cookie_site(_event=None):
+        new_site = var_cookie_site.get()
+        if new_site not in ("youtube", "bilibili"):
+            return
+        old_site = shown_cookie_site[0]
+        if new_site == old_site:
+            return
+        config[cookie_key(old_site)] = var_cookie_path.get().strip()
+        shown_cookie_site[0] = new_site
+        config["cookie_site"] = new_site
+        var_cookie_path.set(config.get(cookie_key(new_site), ""))
+        save_config(config)
 
     def browse_cookie():
         path = filedialog.askopenfilename(
             title="选择 Cookie 文件",
             filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")]
         )
-
         if path:
             var_cookie_path.set(path)
-            config["yt_cookie_path"] = path
+            site = var_cookie_site.get()
+            config[cookie_key(site)] = path
+            config["cookie_site"] = site
             save_config(config)
 
     ttk.Checkbutton(frame_cookie, text="使用 Cookie 文件",
                     variable=var_use_cookie,
                     command=on_cookie_toggle).grid(
         row=0, column=0, sticky="w", padx=(0, 10))
-    ent_cookie = ttk.Entry(frame_cookie, textvariable=var_cookie_path, width=52,
+    cmb_cookie_site = ttk.Combobox(
+        frame_cookie, textvariable=var_cookie_site,
+        values=["youtube", "bilibili"], width=10, state="readonly",
+    )
+    cmb_cookie_site.grid(row=0, column=1, sticky="w", padx=(0, 8))
+    cmb_cookie_site.bind("<<ComboboxSelected>>", on_cookie_site)
+    ent_cookie = ttk.Entry(frame_cookie, textvariable=var_cookie_path, width=42,
                            state="normal" if var_use_cookie.get() else "disabled")
-    ent_cookie.grid(row=0, column=1, sticky="ew")
+    ent_cookie.grid(row=0, column=2, sticky="ew")
     btn_cookie = ttk.Button(frame_cookie, text="浏览…", command=browse_cookie, width=7,
                             state="normal" if var_use_cookie.get() else "disabled")
-    btn_cookie.grid(row=0, column=2, padx=(6, 0))
+    btn_cookie.grid(row=0, column=3, padx=(6, 0))
 
     #运行日志
     frame_log = ttk.LabelFrame(parent, text="运行日志", padding=10)
@@ -625,6 +664,11 @@ def ytDownload_gui(parent):
         url         = var_url.get().strip()
         save_dir    = var_save_dir.get().strip()
         cookie_path = var_cookie_path.get().strip() if var_use_cookie.get() else None
+        if var_use_cookie.get():
+            config[cookie_key(var_cookie_site.get())] = cookie_path or ""
+            config["cookie_site"] = var_cookie_site.get()
+            config["use_cookie"] = True
+            save_config(config)
         t_start     = hms_str(var_t_start)
         t_end       = hms_str(var_t_end)
 
@@ -727,37 +771,114 @@ def ytDownload_gui(parent):
     btn.configure(command=start)
 
 def cookiesGain_gui(parent):
-    var_output = tk.StringVar(value="youtube_cookies.txt")
+    config = load_config()
+    if "bili_cookie_path" not in config and "bilibili" in os.path.basename(config.get("yt_cookie_path", "")).lower():
+        config["bili_cookie_path"] = config.get("yt_cookie_path", "")
+        config["yt_cookie_path"] = ""
+        config["cookie_site"] = "bilibili"
+        save_config(config)
+
+    def cookie_key(site):
+        return "bili_cookie_path" if site == "bilibili" else "yt_cookie_path"
+
+    def default_cookie_path(site):
+        saved = config.get(cookie_key(site), "")
+        if saved:
+            return saved
+        return "bilibili_cookies.txt" if site == "bilibili" else "youtube_cookies.txt"
+
+    cookie_site = config.get("cookie_site", "youtube")
+    if cookie_site not in ("youtube", "bilibili"):
+        cookie_site = "youtube"
+
+    var_site = tk.StringVar(value=cookie_site)
+    var_output = tk.StringVar(value=default_cookie_path(cookie_site))
+    shown_site = [cookie_site]
 
     parent.pack(fill="x", padx=12, pady=5)
-    parent.columnconfigure(1, weight=1)
+    parent.columnconfigure(2, weight=1)
 
-    ttk.Label(parent, text="输出路径", width=8, anchor="e").grid(row=0, column=0, sticky="e", padx=(0, 6))
-    ttk.Entry(parent, textvariable=var_output, width=52).grid(row=0, column=1, sticky="ew")
-    ttk.Button(parent, text="浏览…", width=7, command=lambda: var_output.set(
-        filedialog.asksaveasfilename(title="保存 Cookie 文件", defaultextension=".txt",
-            filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")]) or var_output.get()
-    )).grid(row=0, column=2, padx=(6, 0))
-    ttk.Label(parent, text="请在窗口弹出60s内完成登录",foreground="gray").grid(row=1, column=1, sticky="w")
+    ttk.Label(parent, text="站点", width=8, anchor="e").grid(row=0, column=0, sticky="e", padx=(0, 6))
+    cmb_site = ttk.Combobox(
+        parent, textvariable=var_site,
+        values=["youtube", "bilibili"], width=12, state="readonly",
+    )
+    cmb_site.grid(row=0, column=1, sticky="w")
+
+    ttk.Label(parent, text="输出路径", width=8, anchor="e").grid(row=1, column=0, sticky="e", padx=(0, 6))
+    ttk.Entry(parent, textvariable=var_output, width=52).grid(row=1, column=1, columnspan=2, sticky="ew")
+
+    def refresh_cookie_hint():
+        if var_site.get() == "bilibili":
+            lbl_hint.configure(text="将新开一个不走代理的 Edge 窗口，请在 60 秒内登录。Cookie 保存后窗口会立即关闭。")
+        else:
+            lbl_hint.configure(text="请在 60 秒内完成登录，Cookie 保存后窗口会立即关闭")
+
+    def on_site(_event=None):
+        new_site = var_site.get()
+        if new_site not in ("youtube", "bilibili"):
+            return
+        old_site = shown_site[0]
+        if new_site == old_site:
+            refresh_cookie_hint()
+            return
+        config[cookie_key(old_site)] = var_output.get().strip()
+        shown_site[0] = new_site
+        config["cookie_site"] = new_site
+        var_output.set(default_cookie_path(new_site))
+        save_config(config)
+        refresh_cookie_hint()
+
+    def browse_output():
+        path = filedialog.asksaveasfilename(
+            title="保存 Cookie 文件", defaultextension=".txt",
+            filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")])
+        if path:
+            var_output.set(path)
+            site = var_site.get()
+            config[cookie_key(site)] = path
+            config["cookie_site"] = site
+            save_config(config)
+
+    cmb_site.bind("<<ComboboxSelected>>", on_site)
+    ttk.Button(parent, text="浏览…", width=7, command=browse_output).grid(row=1, column=3, padx=(6, 0))
+    lbl_hint = ttk.Label(parent, text="", foreground="gray")
+    lbl_hint.grid(row=2, column=1, columnspan=3, sticky="w")
+    refresh_cookie_hint()
 
     btn = ttk.Button(parent, text="▶  获取 Cookie")
-    btn.grid(row=2, column=0, columnspan=3, pady=(4, 2))
+    btn.grid(row=3, column=0, columnspan=4, pady=(4, 2))
 
     def start():
         out = var_output.get().strip()
         if not out:
             messagebox.showwarning("缺少参数", "请填写输出路径！")
             return
+        site = var_site.get()
+        config[cookie_key(site)] = out
+        config["cookie_site"] = site
+        save_config(config)
         btn.configure(state="disabled", text="处理中…")
 
         def task():
-            out_path = get_youtube_cookies(out)
+            try:
+                if site == "bilibili":
+                    out_path = get_bilibili_cookies(out)
+                else:
+                    out_path = get_youtube_cookies(out)
+            except Exception as e:
+                parent.after(0, on_fail, str(e))
+                return
             parent.after(0, on_done, out_path)
 
         def on_done(out_path):
             btn.configure(state="normal", text="▶  获取 Cookie")
             if messagebox.askyesno("完成", f"Cookie 已保存！\n\n{out_path}\n\n是否打开所在文件夹？"):
                 os.startfile(os.path.dirname(os.path.abspath(out_path)))
+
+        def on_fail(message):
+            btn.configure(state="normal", text="▶  获取 Cookie")
+            messagebox.showerror("失败", message)
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1010,5 +1131,5 @@ def gui():
     assExtract_gui(ttk.LabelFrame(tab4, text="ASS转TXT（只保留字幕没有时间戳）", padding=10))
     txtTransform_gui(ttk.LabelFrame(tab4, text="油管字幕断句（用于字幕乱断时）", padding=10))
     timestamps_gui(ttk.LabelFrame(tab4, text="时间戳提取(用于whisper手打时间戳，适合先轴后翻）", padding=10))
-    cookiesGain_gui(ttk.LabelFrame(tab4, text="油管Cookie获取", padding=10))
+    cookiesGain_gui(ttk.LabelFrame(tab4, text="Cookie获取", padding=10))
     root.mainloop()

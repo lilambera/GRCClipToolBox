@@ -38,10 +38,12 @@ desktop/
 
 ## 打包为 exe
 
+`main.spec` 里入口是相对路径 `main.py`，PyInstaller 必须在 `desktop/` 下执行。可在仓库根目录用这一条，跑完会回到原目录：
+
 ```powershell
-cd desktop
-pyinstaller main.spec
-python verify_bundle.py
+conda activate fuwayear
+Push-Location desktop; python -m PyInstaller main.spec --noconfirm; Pop-Location
+python desktop/verify_bundle.py
 ```
 
 输出在 `desktop/dist/main/`。

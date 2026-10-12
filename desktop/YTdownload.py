@@ -211,6 +211,9 @@ def download_video(video_url, output_dir,
                    time_start=None, time_end=None,
                    cookie_path=None, log=print, progress_hook=None):
 
+    from bilibili_download import download_bilibili_video, is_bilibili_url
+    use_bilibili = is_bilibili_url(video_url)
+
     # 启动时打印路径信息，方便排查
     log(f"[调试] DENO路径  = {_DENO_PATH}  存在={os.path.isfile(_DENO_PATH)}")
     log(f"[调试] FFMPEG路径= {_FFMPEG_PATH}  存在={os.path.isfile(_FFMPEG_PATH)}")
@@ -225,94 +228,110 @@ def download_video(video_url, output_dir,
     save_dir = os.path.dirname(os.path.abspath(output_dir)) if custom_name else output_dir
     os.makedirs(save_dir or ".", exist_ok=True)
 
-    # 基本信息获取
-    info_opts = _common_ydl_opts(
-        log,
-        quiet=False,
-        no_warnings=False,
-        skip_download=True,
-        remote_components=["ejs:github"],
-        logger=_YtdlpLogger(log),
-    )
-    info_opts, tmp_c = _apply_cookie(info_opts, cookie_path)
-    title = "video"
-    upload_date = ""
-    try:
-        log("▶ 正在获取视频信息…")
-        with yt_dlp.YoutubeDL(info_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            title = info.get("title", "video")
-            upload_date = info.get("upload_date", "")
-        log(f"  标题: {title}")
-    except Exception as e:
-        log(f"❌ 获取视频信息失败: {e}")
-        log(traceback.format_exc())
-        return False, ""
-    finally:
-        _cleanup(tmp_c)
-
-    if custom_name:
-        name = os.path.splitext(os.path.basename(output_dir))[0]
+    if use_bilibili:
+        downloaded = download_bilibili_video(
+            video_url,
+            output_dir,
+            time_start=time_start,
+            time_end=time_end,
+            cookie_path=cookie_path,
+            log=log,
+            progress_hook=progress_hook,
+        )
+        if not downloaded:
+            return False, ""
+        temp_path, final_path = downloaded
+        tmp_c2 = None
     else:
-        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)
-        if upload_date and len(upload_date) == 8:
-            name = datetime.strptime(upload_date, "%Y%m%d").strftime("%m_%d_") + name
-    temp_path  = os.path.join(save_dir, f"{name}_temp.mp4")
-    final_path = os.path.join(save_dir, f"{name}.mp4")
-    log(f"[调试] 临时文件  = {temp_path}")
-    log(f"[调试] 输出文件  = {final_path}")
+        # 基本信息获取
+        info_opts = _common_ydl_opts(
+            log,
+            quiet=False,
+            no_warnings=False,
+            skip_download=True,
+            remote_components=["ejs:github"],
+            logger=_YtdlpLogger(log),
+        )
+        info_opts, tmp_c = _apply_cookie(info_opts, cookie_path)
+        title = "video"
+        upload_date = ""
+        try:
+            log("▶ 正在获取视频信息…")
+            with yt_dlp.YoutubeDL(info_opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+                title = info.get("title", "video")
+                upload_date = info.get("upload_date", "")
+            log(f"  标题: {title}")
+        except Exception as e:
+            log(f"❌ 获取视频信息失败: {e}")
+            log(traceback.format_exc())
+            return False, ""
+        finally:
+            _cleanup(tmp_c)
 
-    is_nico = "nicovideo.jp" in video_url or "nico.ms" in video_url
+        if custom_name:
+            name = os.path.splitext(os.path.basename(output_dir))[0]
+        else:
+            name = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)
+            if upload_date and len(upload_date) == 8:
+                name = datetime.strptime(upload_date, "%Y%m%d").strftime("%m_%d_") + name
+        temp_path  = os.path.join(save_dir, f"{name}_temp.mp4")
+        final_path = os.path.join(save_dir, f"{name}.mp4")
+        log(f"[调试] 临时文件  = {temp_path}")
+        log(f"[调试] 输出文件  = {final_path}")
 
-    if is_nico:
-        fmt = "bestvideo+bestaudio/best"
-    else:
-        fmt = "bestvideo[ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a][protocol!*=m3u8]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        is_nico = "nicovideo.jp" in video_url or "nico.ms" in video_url
 
-    ydl_opts = _common_ydl_opts(
-        log,
-        format=fmt,
-        outtmpl=temp_path,
-        quiet=False,
-        no_warnings=False,
-        noprogress=False,
-        progress_with_newline=True,
-        remote_components=["ejs:github"],
-        logger=_YtdlpLogger(log, progress_callback=progress_hook),
-    )
+        if is_nico:
+            fmt = "bestvideo+bestaudio/best"
+        else:
+            fmt = "bestvideo[ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a][protocol!*=m3u8]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
-    # 时间区间裁剪：使用 yt-dlp 原生的 download_ranges，保持最高画质
-    need_trim = False
-    if time_start or time_end:
-        from yt_dlp.utils import download_range_func
-        start_sec = _hms_to_sec(time_start) if time_start else 0
-        end_sec   = _hms_to_sec(time_end) if time_end else float('inf')
-        ydl_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
-        ydl_opts["force_keyframes_at_cuts"] = True
-        need_trim = True
-        # ffmpeg 下载分段时需要代理和 UA 才能连接 Google 视频服务器
-        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ydl_opts = _common_ydl_opts(
+            log,
+            format=fmt,
+            outtmpl=temp_path,
+            quiet=False,
+            no_warnings=False,
+            noprogress=False,
+            progress_with_newline=True,
+            remote_components=["ejs:github"],
+            logger=_YtdlpLogger(log, progress_callback=progress_hook),
+        )
+
+        # 时间区间裁剪：使用 yt-dlp 原生的 download_ranges，保持最高画质
+        need_trim = False
+        if time_start or time_end:
+            from yt_dlp.utils import download_range_func
+            start_sec = _hms_to_sec(time_start) if time_start else 0
+            end_sec   = _hms_to_sec(time_end) if time_end else float('inf')
+            ydl_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
+            ydl_opts["force_keyframes_at_cuts"] = True
+            need_trim = True
+            # ffmpeg 下载分段时需要代理和 UA 才能连接 Google 视频服务器
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            proxy = _resolve_proxy()
+            ydl_opts["external_downloader_args"] = {
+                "ffmpeg_i": ["-user_agent", ua, "-http_proxy", proxy],
+            }
+            log(f"  时间区间: {time_start or '开头'} → {time_end or '结尾'}")
+
+        # 全局代理设置，让 yt-dlp 本身的下载也走代理
         proxy = _resolve_proxy()
-        ydl_opts["external_downloader_args"] = {
-            "ffmpeg_i": ["-user_agent", ua, "-http_proxy", proxy],
-        }
-        log(f"  时间区间: {time_start or '开头'} → {time_end or '结尾'}")
+        ydl_opts["proxy"] = proxy
+        log(f"  使用代理: {proxy}")
 
-    # 全局代理设置，让 yt-dlp 本身的下载也走代理
-    proxy = _resolve_proxy()
-    ydl_opts["proxy"] = proxy
-    log(f"  使用代理: {proxy}")
+        if progress_hook:
+            ydl_opts["progress_hooks"] = [progress_hook]
 
-    if progress_hook:
-        ydl_opts["progress_hooks"] = [progress_hook]
-
-    ydl_opts, tmp_c2 = _apply_cookie(ydl_opts, cookie_path)
+        ydl_opts, tmp_c2 = _apply_cookie(ydl_opts, cookie_path)
 
     # 下载
     try:
-        log(f"▶ 开始下载: {title}")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+        if not use_bilibili:
+            log(f"▶ 开始下载: {title}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
         log("  下载完成，正在检测编码…")
 
         # 检测视频编码

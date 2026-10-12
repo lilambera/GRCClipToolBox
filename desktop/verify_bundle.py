@@ -239,8 +239,8 @@ def main() -> int:
     print(f"目标目录: {dist_dir}\n")
 
     if not os.path.isdir(dist_dir):
-        print("未找到打包目录。请先执行:")
-        print(r'  F:\anaconda3\envs\fuwayear\python.exe -m PyInstaller main.spec --noconfirm')
+        print("未找到打包目录。请先在 desktop 目录执行:")
+        print(r'  python -m PyInstaller main.spec --noconfirm')
         return 1
 
     errors: list[str] = []
