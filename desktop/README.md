@@ -43,10 +43,9 @@ desktop/
 ```powershell
 conda activate fuwayear
 Push-Location desktop; python -m PyInstaller main.spec --noconfirm; Pop-Location
-python desktop/verify_bundle.py
 ```
 
-输出在 `desktop/dist/main/`。
+输出在 `desktop/dist/clipbox/clipbox.exe`。
 
 ## 不应提交的文件
 
